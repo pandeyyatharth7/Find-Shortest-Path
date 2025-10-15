@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Star, MapPin, Clock, Route } from "lucide-react"
+import RouteMap from "@/components/route-map"
 
 export default function PathFinderPage() {
   const [source, setSource] = useState("")
@@ -33,14 +34,19 @@ export default function PathFinderPage() {
       })
 
       if (!response.ok) {
-        throw new Error("Failed to get directions")
+        const errorData = await response.json()
+        const errorMessage = errorData.error || "Failed to get directions"
+        console.error("[v0] API error response:", errorData)
+        alert(`Error: ${errorMessage}`)
+        return
       }
 
       const data = await response.json()
+      console.log("[v0] Route data received:", data)
       setResult(data)
     } catch (error) {
-      console.error("Error finding route:", error)
-      alert("Error finding route. Please try again.")
+      console.error("[v0] Network error:", error)
+      alert("Network error. Please check your connection and try again.")
     } finally {
       setLoading(false)
     }
@@ -157,30 +163,23 @@ export default function PathFinderPage() {
               <CardTitle className="text-white text-xl">Route Visualization</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="w-full h-96 lg:h-[500px] rounded-lg bg-gradient-to-br from-slate-800 to-slate-900 flex flex-col items-center justify-center text-center p-8">
-                <MapPin className="w-16 h-16 text-amber-400 mb-4" />
-                <h3 className="text-white text-xl font-semibold mb-2">Interactive Map</h3>
-                <p className="text-slate-200 text-sm mb-4">
-                  To enable the interactive map display, you'll need to add your Google Maps API key to the environment
-                  variables.
-                </p>
-                <div className="bg-slate-700/60 rounded-lg p-4 text-left text-sm">
-                  <p className="text-slate-100 mb-2">
-                    <strong>Setup Instructions:</strong>
+              {result ? (
+                <RouteMap
+                  geometry={result.geometry}
+                  start={result.start ? { lat: result.start.lat, lon: result.start.lon } : undefined}
+                  end={result.end ? { lat: result.end.lat, lon: result.end.lon } : undefined}
+                  className="w-full h-96 lg:h-[500px] rounded-lg overflow-hidden"
+                />
+              ) : (
+                <div className="w-full h-96 lg:h-[500px] rounded-lg bg-gradient-to-br from-slate-800 to-slate-900 flex flex-col items-center justify-center text-center p-8">
+                  <MapPin className="w-16 h-16 text-amber-400 mb-4" />
+                  <h3 className="text-white text-xl font-semibold mb-2">Interactive Map</h3>
+                  <p className="text-slate-200 text-sm mb-4">
+                    This app now uses free OpenStreetMap tiles, Nominatim geocoding, and OSRM routing. Enter addresses
+                    and press “Find Fastest Route” to visualize the path.
                   </p>
-                  <ol className="text-slate-200 space-y-1 text-xs">
-                    <li>1. Get a Google Maps API key from Google Cloud Console</li>
-                    <li>2. Enable Maps JavaScript API and Directions API</li>
-                    <li>3. Add the key to your environment variables</li>
-                    <li>4. Configure domain restrictions for security</li>
-                  </ol>
                 </div>
-                {result && (
-                  <div className="mt-4 text-amber-300 text-sm">
-                    ✓ Route calculated! Map would display the path here.
-                  </div>
-                )}
-              </div>
+              )}
             </CardContent>
           </Card>
         </div>
