@@ -2,7 +2,7 @@
 
 // This avoids bundling the 'leaflet' npm module that was failing to load with a MIME-type error.
 
-import { useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 type Props = {
   geometry: { type: "LineString"; coordinates: [number, number][] } | null
@@ -24,6 +24,36 @@ export default function RouteMap({ geometry, start, end, className }: Props) {
   const lineLayerRef = useRef<any>(null)
   const startMarkerRef = useRef<any>(null)
   const endMarkerRef = useRef<any>(null)
+  const [leafletReady, setLeafletReady] = useState(false)
+  const [leafletError, setLeafletError] = useState(false)
+
+  useEffect(() => {
+    let timeout: NodeJS.Timeout
+    let checkInterval: NodeJS.Timeout
+
+    const checkLeaflet = () => {
+      if (window.L) {
+        setLeafletReady(true)
+        clearInterval(checkInterval)
+        clearTimeout(timeout)
+      }
+    }
+
+    checkInterval = setInterval(checkLeaflet, 100)
+    timeout = setTimeout(() => {
+      clearInterval(checkInterval)
+      if (!window.L) {
+        setLeafletError(true)
+      }
+    }, 5000)
+
+    checkLeaflet()
+
+    return () => {
+      clearInterval(checkInterval)
+      clearTimeout(timeout)
+    }
+  }, [])
 
   // Convert GeoJSON coords [lng, lat] -> [lat, lng]
   const lineLatLngs = useMemo(() => {
@@ -33,7 +63,7 @@ export default function RouteMap({ geometry, start, end, className }: Props) {
 
   // Initialize map once
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
+    if (!containerRef.current || mapRef.current || !leafletReady) return
     const L = window.L
     if (!L) return
 
@@ -56,7 +86,7 @@ export default function RouteMap({ geometry, start, end, className }: Props) {
       mapRef.current = null
       tileLayerRef.current = null
     }
-  }, [start])
+  }, [start, leafletReady])
 
   // Update overlays whenever data changes
   useEffect(() => {
@@ -108,6 +138,27 @@ export default function RouteMap({ geometry, start, end, className }: Props) {
       map.setView([start.lat, start.lon], 13)
     }
   }, [lineLatLngs, start, end])
+
+  if (leafletError) {
+    return (
+      <div className={className || "w-full h-96 lg:h-[500px] rounded-lg overflow-hidden"}>
+        <div className="w-full h-full rounded-lg bg-gradient-to-br from-slate-800 to-slate-900 flex flex-col items-center justify-center text-center p-8">
+          <div className="text-red-400 text-lg font-semibold mb-2">Map Library Failed to Load</div>
+          <p className="text-slate-200 text-sm">Please refresh the page and try again.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!leafletReady) {
+    return (
+      <div className={className || "w-full h-96 lg:h-[500px] rounded-lg overflow-hidden"}>
+        <div className="w-full h-full rounded-lg bg-gradient-to-br from-slate-800 to-slate-900 flex flex-col items-center justify-center text-center p-8">
+          <div className="animate-pulse text-slate-300 text-sm">Loading map...</div>
+        </div>
+      </div>
+    )
+  }
 
   return <div ref={containerRef} className={className || "w-full h-96 lg:h-[500px] rounded-lg overflow-hidden"} />
 }

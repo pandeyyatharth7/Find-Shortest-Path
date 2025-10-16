@@ -1,14 +1,44 @@
 import { type NextRequest, NextResponse } from "next/server"
 
+async function fetchWithRetry(url: string, options: RequestInit = {}, maxRetries = 3) {
+  let lastError: Error | null = null
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10s timeout
+
+      const res = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      })
+
+      clearTimeout(timeoutId)
+      return res
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      const delay = Math.min(1000 * Math.pow(2, attempt), 5000) // exponential backoff, max 5s
+
+      if (attempt < maxRetries - 1) {
+        console.log(`[v0] Retry attempt ${attempt + 1}/${maxRetries - 1} after ${delay}ms`)
+        await new Promise((resolve) => setTimeout(resolve, delay))
+      }
+    }
+  }
+
+  throw lastError || new Error("Max retries exceeded")
+}
+
 async function geocode(query: string) {
   const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     headers: {
       "User-Agent": "FastestPathFinder v0 App",
       "Accept-Language": "en",
       Referer: "https://v0.app",
     },
   })
+
   if (!res.ok) {
     throw new Error(`Nominatim error: ${res.status} ${res.statusText}`)
   }
@@ -50,7 +80,7 @@ export async function POST(request: NextRequest) {
     })
 
     const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${src.lon},${src.lat};${dst.lon},${dst.lat}?overview=full&geometries=geojson&steps=true`
-    const osrmRes = await fetch(osrmUrl, { headers: { "Accept-Language": "en" } })
+    const osrmRes = await fetchWithRetry(osrmUrl, { headers: { "Accept-Language": "en" } })
     const osrmData = await osrmRes.json()
 
     console.log("[v0] OSRM response status:", osrmData.code)
@@ -95,6 +125,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(payload)
   } catch (error) {
     console.error("[v0] Directions error:", error)
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 })
+    const message = error instanceof Error ? error.message : "Unknown error"
+    const userMessage = message.includes("ECONNREFUSED")
+      ? "Network connection failed. Please try again in a moment."
+      : message.includes("Location not found")
+        ? "Could not find one or both locations. Please check the addresses."
+        : message.includes("timeout")
+          ? "Request timed out. Please try again."
+          : message
+
+    return NextResponse.json({ error: userMessage }, { status: 500 })
   }
 }
